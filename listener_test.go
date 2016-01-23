@@ -152,6 +152,7 @@ func ListenOnce(port int) (chan result, []byte) {
 			cnt, err = conn.Read(b)
 		}
 		if err == io.EOF {
+			x = append(x, b[:cnt]...)
 			c <- result{x, nil}
 		} else {
 			c <- result{nil, err}
@@ -160,25 +161,52 @@ func ListenOnce(port int) (chan result, []byte) {
 	return c, cert
 }
 
-func TestListenerTCP(t *testing.T) {
+func listenerTCPHelper(t *testing.T, want []byte) {
 	bc, _ := ListenOnce(testPort)
 	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
 	if err != nil {
 		t.Errorf("Couldn't connect to server: %s", err)
 	}
-	want := []byte{1, 2, 3, 5, 8, 13, 21, 34}
-	conn.Write(want)
-	conn.Close()
+	send := make([]byte, len(want))
+	copy(send, want)
+	n:= 0
+	for n < len(send) {
+		n, err := conn.Write(send)
+		if err != nil {
+			t.Errorf("Error writing to connection: %s", err)
+		}
+		send = send[n:]
+	}
+	err = conn.Close()
+	if err != nil {
+		t.Errorf("Error closing connection: %s", err)
+	}
 	got := <-bc
 	if got.err != nil {
 		t.Errorf("Unexpected error from listener: %s", got.err)
 	}
 	if bytes.Compare(got.data, want) != 0 {
-		t.Errorf("Got %s, want %s", got.data, want)
+		t.Errorf("Got '% x', want '% x'", got.data, want)
 	}
 }
 
-func TestListenerTLS(t *testing.T) {
+func TestListenerTCPOneByte(t *testing.T) {
+	listenerTCPHelper(t, []byte{1})
+}
+
+func TestListenerTCPSmall(t *testing.T) {
+	listenerTCPHelper(t, []byte{1, 2, 3, 5, 8, 13, 21, 34})
+}
+
+func TestListenerTCPMedium(t *testing.T) {
+	want := []byte{1, 2, 3, 5, 8, 13, 21, 34}
+	for i := 0; i < 10; i++ {
+		want = append(want, want...)
+	}
+	listenerTCPHelper(t, want)
+}
+
+func listenerTLSHelper(t *testing.T, want []byte) {
 	bc, serverCert := ListenOnce(testPort)
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(serverCert)
@@ -187,16 +215,43 @@ func TestListenerTLS(t *testing.T) {
 	if err != nil {
 		t.Errorf("Couldn't connect to server: %s", err)
 	}
-	want := []byte{1, 2, 3, 5, 8, 13, 21, 34}
-	conn.Write(want)
-	conn.Close()
+	send := make([]byte, len(want))
+	copy(send, want)
+	n:= 0
+	for n < len(send) {
+		n, err := conn.Write(send)
+		if err != nil {
+			t.Errorf("Error writing to connection: %s", err)
+		}
+		send = send[n:]
+	}
+	err = conn.Close()
+	if err != nil {
+		t.Errorf("Error closing connection: %s", err)
+	}
 	got := <-bc
 	if got.err != nil {
 		t.Errorf("Unexpected error from listener: %s", got.err)
 	}
 	if bytes.Compare(got.data, want) != 0 {
-		t.Errorf("Got %s, want %s", got.data, want)
+		t.Errorf("Got '% x', want '% x'", got.data, want)
 	}
+}
+
+func TestListenerTLSOneByte(t *testing.T) {
+	listenerTLSHelper(t, []byte{1})
+}
+
+func TestListenerTLSSmall(t *testing.T) {
+	listenerTLSHelper(t, []byte{1, 2, 3, 5, 8, 13, 21, 34})
+}
+
+func TestListenerTLSMedium(t *testing.T) {
+	want := []byte{1, 2, 3, 5, 8, 13, 21, 34}
+	for i := 0; i < 10; i++ {
+		want = append(want, want...)
+	}
+	listenerTLSHelper(t, want)
 }
 
 func TestListenerReadTimeout(t *testing.T) {
