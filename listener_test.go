@@ -169,7 +169,7 @@ func listenerTCPHelper(t *testing.T, want []byte) {
 	}
 	send := make([]byte, len(want))
 	copy(send, want)
-	n:= 0
+	n := 0
 	for n < len(send) {
 		n, err := conn.Write(send)
 		if err != nil {
@@ -217,7 +217,7 @@ func listenerTLSHelper(t *testing.T, want []byte) {
 	}
 	send := make([]byte, len(want))
 	copy(send, want)
-	n:= 0
+	n := 0
 	for n < len(send) {
 		n, err := conn.Write(send)
 		if err != nil {
