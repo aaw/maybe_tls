@@ -161,12 +161,10 @@ func ListenOnce(port int) (chan result, []byte) {
 	return c, cert
 }
 
-func listenerTCPHelper(t *testing.T, want []byte) {
-	bc, _ := ListenOnce(testPort)
-	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
-	if err != nil {
-		t.Errorf("Couldn't connect to server: %s", err)
-	}
+// Common code for TCP and TLS listener tests: send a slice of bytes over the
+// connection, check for any errors and compare the result that the test
+// server sees.
+func listenerTestHelper(t *testing.T, want []byte, conn net.Conn, bc chan result) {
 	send := make([]byte, len(want))
 	copy(send, want)
 	n := 0
@@ -177,7 +175,7 @@ func listenerTCPHelper(t *testing.T, want []byte) {
 		}
 		send = send[n:]
 	}
-	err = conn.Close()
+	err := conn.Close()
 	if err != nil {
 		t.Errorf("Error closing connection: %s", err)
 	}
@@ -188,6 +186,31 @@ func listenerTCPHelper(t *testing.T, want []byte) {
 	if bytes.Compare(got.data, want) != 0 {
 		t.Errorf("Got '% x', want '% x'", got.data, want)
 	}
+}
+
+// Main test harness for TCP Listener: create a listener and send some bytes
+// over TCP, verifying that the server sees what we expect.
+func listenerTCPHelper(t *testing.T, want []byte) {
+	bc, _ := ListenOnce(testPort)
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort))
+	if err != nil {
+		t.Errorf("Couldn't connect to server: %s", err)
+	}
+	listenerTestHelper(t, want, conn, bc)
+}
+
+// Main test harness for TLS Listener: create a listener and send some bytes
+// over TLS, verifying that the server sees what we expect.
+func listenerTLSHelper(t *testing.T, want []byte) {
+	bc, serverCert := ListenOnce(testPort)
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(serverCert)
+	config := tls.Config{RootCAs: pool}
+	conn, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort), &config)
+	if err != nil {
+		t.Errorf("Couldn't connect to server: %s", err)
+	}
+	listenerTestHelper(t, want, conn, bc)
 }
 
 func TestListenerTCPOneByte(t *testing.T) {
@@ -204,38 +227,6 @@ func TestListenerTCPMedium(t *testing.T) {
 		want = append(want, want...)
 	}
 	listenerTCPHelper(t, want)
-}
-
-func listenerTLSHelper(t *testing.T, want []byte) {
-	bc, serverCert := ListenOnce(testPort)
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(serverCert)
-	config := tls.Config{RootCAs: pool}
-	conn, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", testPort), &config)
-	if err != nil {
-		t.Errorf("Couldn't connect to server: %s", err)
-	}
-	send := make([]byte, len(want))
-	copy(send, want)
-	n := 0
-	for n < len(send) {
-		n, err := conn.Write(send)
-		if err != nil {
-			t.Errorf("Error writing to connection: %s", err)
-		}
-		send = send[n:]
-	}
-	err = conn.Close()
-	if err != nil {
-		t.Errorf("Error closing connection: %s", err)
-	}
-	got := <-bc
-	if got.err != nil {
-		t.Errorf("Unexpected error from listener: %s", got.err)
-	}
-	if bytes.Compare(got.data, want) != 0 {
-		t.Errorf("Got '% x', want '% x'", got.data, want)
-	}
 }
 
 func TestListenerTLSOneByte(t *testing.T) {
